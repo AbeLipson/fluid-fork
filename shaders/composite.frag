@@ -42,6 +42,11 @@ void main () {
     float speed = data.b;
     vec3 color = hsvToRGB(vec3(max(0.6 - speed * 0.0025, 0.52), 0.75, 1.0));
 
+    // Obstacles write a large sentinel into the speed channel so we can color them distinctly.
+    if (speed > 100000.0) {
+        color = vec3(0.93, 0.86, 0.74); // beige / sand
+    }
+
 
     vec4 lightSpacePosition = u_lightProjectionViewMatrix * vec4(worldSpacePosition, 1.0);
     lightSpacePosition /= lightSpacePosition.w;

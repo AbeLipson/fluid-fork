@@ -33,10 +33,18 @@ vec3 sampleVelocity (sampler2D texture, vec3 position) {
 }
 
 void main () {
-    vec3 particlePosition = texture2D(u_particlePositionTexture, v_coordinates).rgb;
+    vec4 particlePositionSample = texture2D(u_particlePositionTexture, v_coordinates);
+    vec3 particlePosition = particlePositionSample.rgb;
     particlePosition = (particlePosition / u_gridSize) * u_gridResolution;
 
     vec3 particleVelocity = texture2D(u_particleVelocityTexture, v_coordinates).rgb;
+
+    // If this particle was recycled from the +X outflow back to the left,
+    // reset its velocity so we don't re-inject outflow kinetic energy as inflow.
+    if (particlePositionSample.a > 0.5) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
 
     vec3 currentVelocity = sampleVelocity(u_gridVelocityTexture, particlePosition);
     vec3 originalVelocity = sampleVelocity(u_originalGridVelocityTexture, particlePosition);

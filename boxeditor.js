@@ -313,6 +313,8 @@ var BoxEditor = (function () {
         // box state
 
         this.boxes = [];
+        // Drawn in the editor but not editable/selectable (used for reef preview).
+        this.overlayBoxes = [];
 
 
         ////////////////////////////////////////////////
@@ -972,6 +974,8 @@ var BoxEditor = (function () {
 
             .uniformMatrix4fv('u_projectionMatrix', false, this.projectionMatrix)
             .uniformMatrix4fv('u_viewMatrix', false, this.camera.getViewMatrix())
+            .uniform3f('u_baseColor', 0.97, 0.97, 0.97)
+            .uniform1f('u_opacity', 1.0)
 
             .enable(wgl.POLYGON_OFFSET_FILL)
             .polygonOffset(1, 1);
@@ -1041,8 +1045,10 @@ var BoxEditor = (function () {
             }
         }
         
+        // Draw regular boxes first (opaque), skipping the water volume (drawn later translucent).
         for (var i = 0; i < this.boxes.length; ++i) {
             var box = this.boxes[i];
+            if (box.isWater) continue;
 
             boxDrawState.uniform3f('u_translation', box.min[0], box.min[1], box.min[2])
                 .uniform3f('u_scale', box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
@@ -1055,6 +1061,72 @@ var BoxEditor = (function () {
             }
 
             wgl.drawElements(boxDrawState, wgl.TRIANGLES, 36, wgl.UNSIGNED_SHORT);
+        }
+
+        ///////////////////////////////////////////////
+        // draw overlay boxes (reef preview) - opaque beige
+
+        if (this.overlayBoxes && this.overlayBoxes.length > 0) {
+            var reefDrawState = wgl.createDrawState()
+                .bindFramebuffer(null)
+                .viewport(0, 0, this.canvas.width, this.canvas.height)
+                .enable(wgl.DEPTH_TEST)
+                .enable(wgl.CULL_FACE)
+                .useProgram(this.boxProgram)
+                .vertexAttribPointer(this.cubeVertexBuffer, this.boxProgram.getAttribLocation('a_cubeVertexPosition'), 3, wgl.FLOAT, wgl.FALSE, 0, 0)
+                .bindIndexBuffer(this.cubeIndexBuffer)
+                .uniformMatrix4fv('u_projectionMatrix', false, this.projectionMatrix)
+                .uniformMatrix4fv('u_viewMatrix', false, this.camera.getViewMatrix())
+                .uniform3f('u_baseColor', 0.93, 0.86, 0.74)
+                .uniform1f('u_opacity', 1.0)
+                .uniform3f('u_highlightSide', 1.5, 1.5, 1.5)
+                .enable(wgl.POLYGON_OFFSET_FILL)
+                .polygonOffset(1, 2);
+
+            for (var i = 0; i < this.overlayBoxes.length; ++i) {
+                var box = this.overlayBoxes[i];
+                reefDrawState.uniform3f('u_translation', box.min[0], box.min[1], box.min[2])
+                    .uniform3f('u_scale', box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
+                wgl.drawElements(reefDrawState, wgl.TRIANGLES, 36, wgl.UNSIGNED_SHORT);
+            }
+        }
+
+        ///////////////////////////////////////////////
+        // draw water volume translucent so reef is visible underneath
+
+        var hasWater = false;
+        for (var i = 0; i < this.boxes.length; ++i) {
+            if (this.boxes[i].isWater) { hasWater = true; break; }
+        }
+
+        if (hasWater) {
+            var waterDrawState = wgl.createDrawState()
+                .bindFramebuffer(null)
+                .viewport(0, 0, this.canvas.width, this.canvas.height)
+                .enable(wgl.DEPTH_TEST)
+                .depthMask(false)
+                .enable(wgl.CULL_FACE)
+                .enable(wgl.BLEND)
+                .blendEquation(wgl.FUNC_ADD)
+                .blendFuncSeparate(wgl.SRC_ALPHA, wgl.ONE_MINUS_SRC_ALPHA, wgl.ONE, wgl.ONE_MINUS_SRC_ALPHA)
+                .useProgram(this.boxProgram)
+                .vertexAttribPointer(this.cubeVertexBuffer, this.boxProgram.getAttribLocation('a_cubeVertexPosition'), 3, wgl.FLOAT, wgl.FALSE, 0, 0)
+                .bindIndexBuffer(this.cubeIndexBuffer)
+                .uniformMatrix4fv('u_projectionMatrix', false, this.projectionMatrix)
+                .uniformMatrix4fv('u_viewMatrix', false, this.camera.getViewMatrix())
+                .uniform3f('u_baseColor', 0.65, 0.80, 0.92)
+                .uniform1f('u_opacity', 0.18)
+                .uniform3f('u_highlightSide', 1.5, 1.5, 1.5)
+                .enable(wgl.POLYGON_OFFSET_FILL)
+                .polygonOffset(1, 1);
+
+            for (var i = 0; i < this.boxes.length; ++i) {
+                var box = this.boxes[i];
+                if (!box.isWater) continue;
+                waterDrawState.uniform3f('u_translation', box.min[0], box.min[1], box.min[2])
+                    .uniform3f('u_scale', box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
+                wgl.drawElements(waterDrawState, wgl.TRIANGLES, 36, wgl.UNSIGNED_SHORT);
+            }
         }
 
 

@@ -205,6 +205,10 @@ var Renderer = (function () {
                 vertexShader: 'shaders/sphere.vert',
                 fragmentShader: 'shaders/sphere.frag'
             },
+            obstacleProgram: {
+                vertexShader: 'shaders/obstacle.vert',
+                fragmentShader: 'shaders/obstacle.frag'
+            },
             sphereDepthProgram: {
                 vertexShader: 'shaders/spheredepth.vert',
                 fragmentShader: 'shaders/spheredepth.frag'
@@ -286,6 +290,82 @@ var Renderer = (function () {
         wgl.clear(
             wgl.createClearState().bindFramebuffer(this.renderingFramebuffer).clearColor(-99999.0, -99999.0, -99999.0, -99999.0),
             wgl.COLOR_BUFFER_BIT | wgl.DEPTH_BUFFER_BIT);
+
+        /////////////////////////////////////////////
+        // draw obstacles (debug visibility)
+
+        if (simulator.obstacles && simulator.obstacles.length > 0) {
+            // Lazy-create cube geometry buffers (1x1x1 in [0,1], BoxEditor convention)
+            if (!this.obstacleCubeVertexBuffer) {
+                this.obstacleCubeVertexBuffer = wgl.createBuffer();
+                wgl.bufferData(this.obstacleCubeVertexBuffer, wgl.ARRAY_BUFFER, new Float32Array([
+                      // Front face
+                      0.0, 0.0,  1.0,
+                       1.0, 0.0,  1.0,
+                       1.0,  1.0,  1.0,
+                      0.0,  1.0,  1.0,
+                      
+                      // Back face
+                      0.0, 0.0, 0.0,
+                      0.0,  1.0, 0.0,
+                       1.0,  1.0, 0.0,
+                       1.0, 0.0, 0.0,
+                      
+                      // Top face
+                      0.0,  1.0, 0.0,
+                      0.0,  1.0,  1.0,
+                       1.0,  1.0,  1.0,
+                       1.0,  1.0, 0.0,
+                      
+                      // Bottom face
+                      0.0, 0.0, 0.0,
+                       1.0, 0.0, 0.0,
+                       1.0, 0.0,  1.0,
+                      0.0, 0.0,  1.0,
+                      
+                      // Right face
+                       1.0, 0.0, 0.0,
+                       1.0,  1.0, 0.0,
+                       1.0,  1.0,  1.0,
+                       1.0, 0.0,  1.0,
+                      
+                      // Left face
+                      0.0, 0.0, 0.0,
+                      0.0, 0.0,  1.0,
+                      0.0,  1.0,  1.0,
+                      0.0,  1.0, 0.0
+                ]), wgl.STATIC_DRAW);
+
+                this.obstacleCubeIndexBuffer = wgl.createBuffer();
+                wgl.bufferData(this.obstacleCubeIndexBuffer, wgl.ELEMENT_ARRAY_BUFFER, new Uint16Array([
+                    0,  1,  2,      0,  2,  3,    // front
+                    4,  5,  6,      4,  6,  7,    // back
+                    8,  9,  10,     8,  10, 11,   // top
+                    12, 13, 14,     12, 14, 15,   // bottom
+                    16, 17, 18,     16, 18, 19,   // right
+                    20, 21, 22,     20, 22, 23    // left
+                ]), wgl.STATIC_DRAW);
+            }
+
+            var obstacleDrawState = wgl.createDrawState()
+                .bindFramebuffer(this.renderingFramebuffer)
+                .viewport(0, 0, this.canvas.width, this.canvas.height)
+                .enable(wgl.DEPTH_TEST)
+                .enable(wgl.CULL_FACE)
+                .useProgram(this.obstacleProgram)
+                .vertexAttribPointer(this.obstacleCubeVertexBuffer, this.obstacleProgram.getAttribLocation('a_cubeVertexPosition'), 3, wgl.FLOAT, wgl.FALSE, 0, 0)
+                .bindIndexBuffer(this.obstacleCubeIndexBuffer)
+                .uniformMatrix4fv('u_projectionMatrix', false, projectionMatrix)
+                .uniformMatrix4fv('u_viewMatrix', false, viewMatrix);
+
+            for (var oi = 0; oi < simulator.obstacles.length; ++oi) {
+                var o = simulator.obstacles[oi];
+                obstacleDrawState
+                    .uniform3f('u_translation', o.min[0], o.min[1], o.min[2])
+                    .uniform3f('u_scale', o.max[0] - o.min[0], o.max[1] - o.min[1], o.max[2] - o.min[2]);
+                wgl.drawElements(obstacleDrawState, wgl.TRIANGLES, 36, wgl.UNSIGNED_SHORT);
+            }
+        }
 
 
         var sphereDrawState = wgl.createDrawState()

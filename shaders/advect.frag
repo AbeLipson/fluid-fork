@@ -16,9 +16,10 @@ uniform float u_frameNumber;
 
 uniform vec2 u_particlesResolution;
 
-uniform int u_hasObstacle;
-uniform vec3 u_obstacleMin;
-uniform vec3 u_obstacleMax;
+const int MAX_OBSTACLES = 8;
+uniform int u_obstacleCount;
+uniform vec3 u_obstacleMin[MAX_OBSTACLES];
+uniform vec3 u_obstacleMax[MAX_OBSTACLES];
 
 float sampleXVelocity (vec3 position) {
     vec3 cellIndex = vec3(position.x, position.y - 0.5, position.z - 0.5);
@@ -57,42 +58,81 @@ void main () {
 
     vec3 newPosition = position + step;
 
-    newPosition = clamp(newPosition, vec3(0.01), u_gridSize - 0.01);
+    // Domain boundary handling:
+    // - Keep Y/Z clamped (still a "slice" of ocean).
+    // - Keep X>=0 clamped (left side is not open yet).
+    // - Allow X to flow out of +X and recycle back to the left (handled later).
+    newPosition.yz = clamp(newPosition.yz, vec2(0.01), (u_gridSize - 0.01).yz);
+    newPosition.x = max(newPosition.x, 0.01);
 
-    // Prevent particles from entering obstacle
-    if (u_hasObstacle == 1) {
-        // If particle would be inside obstacle, push it out
-        if (newPosition.x > u_obstacleMin.x && newPosition.x < u_obstacleMax.x &&
-            newPosition.y > u_obstacleMin.y && newPosition.y < u_obstacleMax.y &&
-            newPosition.z > u_obstacleMin.z && newPosition.z < u_obstacleMax.z) {
-            
-            // Find the closest face and push particle out
-            float distToMinX = newPosition.x - u_obstacleMin.x;
-            float distToMaxX = u_obstacleMax.x - newPosition.x;
-            float distToMinY = newPosition.y - u_obstacleMin.y;
-            float distToMaxY = u_obstacleMax.y - newPosition.y;
-            float distToMinZ = newPosition.z - u_obstacleMin.z;
-            float distToMaxZ = u_obstacleMax.z - newPosition.z;
-            
-            float minDist = min(min(min(distToMinX, distToMaxX), min(distToMinY, distToMaxY)), min(distToMinZ, distToMaxZ));
-            
-            // Push particle out to the closest face (with small epsilon for float comparison)
+    // Prevent particles from entering obstacles (supports multiple obstacles)
+    for (int i = 0; i < MAX_OBSTACLES; ++i) {
+        if (i >= u_obstacleCount) break;
+        vec3 omin = u_obstacleMin[i];
+        vec3 omax = u_obstacleMax[i];
+
+        if (newPosition.x > omin.x && newPosition.x < omax.x &&
+            newPosition.y > omin.y && newPosition.y < omax.y &&
+            newPosition.z > omin.z && newPosition.z < omax.z) {
+
+            float distToMinX = newPosition.x - omin.x;
+            float distToMaxX = omax.x - newPosition.x;
+            float distToMinY = newPosition.y - omin.y;
+            float distToMaxY = omax.y - newPosition.y;
+            float distToMinZ = newPosition.z - omin.z;
+            float distToMaxZ = omax.z - newPosition.z;
+
+            const float DOMAIN_EPS = 0.011;
+            const float BIG = 1.0e9;
+
+            if (omin.x <= DOMAIN_EPS) distToMinX = BIG;
+            if (omin.y <= DOMAIN_EPS) distToMinY = BIG;
+            if (omin.z <= DOMAIN_EPS) distToMinZ = BIG;
+
+            if (omax.x >= u_gridSize.x - DOMAIN_EPS) distToMaxX = BIG;
+            if (omax.y >= u_gridSize.y - DOMAIN_EPS) distToMaxY = BIG;
+            if (omax.z >= u_gridSize.z - DOMAIN_EPS) distToMaxZ = BIG;
+
+            float minDist = min(
+                min(min(distToMinX, distToMaxX), min(distToMinY, distToMaxY)),
+                min(distToMinZ, distToMaxZ)
+            );
+
             const float EPSILON = 0.001;
             if (abs(minDist - distToMinX) < EPSILON) {
-                newPosition.x = u_obstacleMin.x - 0.01;
+                newPosition.x = omin.x - 0.01;
             } else if (abs(minDist - distToMaxX) < EPSILON) {
-                newPosition.x = u_obstacleMax.x + 0.01;
+                newPosition.x = omax.x + 0.01;
             } else if (abs(minDist - distToMinY) < EPSILON) {
-                newPosition.y = u_obstacleMin.y - 0.01;
+                newPosition.y = omin.y - 0.01;
             } else if (abs(minDist - distToMaxY) < EPSILON) {
-                newPosition.y = u_obstacleMax.y + 0.01;
+                newPosition.y = omax.y + 0.01;
             } else if (abs(minDist - distToMinZ) < EPSILON) {
-                newPosition.z = u_obstacleMin.z - 0.01;
+                newPosition.z = omin.z - 0.01;
             } else {
-                newPosition.z = u_obstacleMax.z + 0.01;
+                newPosition.z = omax.z + 0.01;
             }
+
+            newPosition.yz = clamp(newPosition.yz, vec2(0.01), (u_gridSize - 0.01).yz);
+            newPosition.x = max(newPosition.x, 0.01);
         }
     }
 
-    gl_FragColor = vec4(newPosition, 0.0);
+    // +X open boundary + recycling:
+    // If a particle goes out the right side, respawn it on the left in a thin "inflow strip".
+    // We flag this in .a so the velocity pass can reset its velocity (avoids energy injection).
+    float recycled = 0.0;
+    if (newPosition.x > u_gridSize.x - 0.01) {
+        recycled = 1.0;
+
+        // Inflow strip width in world units. Keep small so it reads as "new water entering".
+        const float INFLOW_WIDTH = 1.0;
+        float r = clamp(randomDirection.x * 0.5 + 0.5, 0.0, 1.0);
+        newPosition.x = 0.02 + r * INFLOW_WIDTH;
+
+        // Keep y/z (clamped) so we don't change the vertical distribution abruptly.
+        newPosition.yz = clamp(newPosition.yz, vec2(0.01), (u_gridSize - 0.01).yz);
+    }
+
+    gl_FragColor = vec4(newPosition, recycled);
 }

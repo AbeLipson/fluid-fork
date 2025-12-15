@@ -43,7 +43,11 @@ var Simulator = (function () {
 
         this.particleDensity = 0;
 
-        this.obstacle = null; // AABB obstacle, null if no obstacle
+        // Obstacles (solid AABBs in world space)
+        this.obstacles = [];
+        this.obstacleCount = 0;
+        this.obstacleMinData = new Float32Array(0);
+        this.obstacleMaxData = new Float32Array(0);
 
         this.velocityTextureWidth = 0;
         this.velocityTextureHeight = 0;
@@ -62,6 +66,16 @@ var Simulator = (function () {
         // simulation parameters
 
         this.flipness = 0.99; //0 is full PIC, 1 is full FLIP
+
+        ///////////////////////////////////////////////////////
+        // wave maker parameters (triggered by UI)
+        this.waveActive = false;
+        this.waveTime = 0.0;
+        this.waveDuration = 3.1;   // seconds
+        this.waveFrequency = 0.9;  // Hz
+        this.waveStrength = 400.0;  // acceleration magnitude (world units / s^2)
+        this.waveWidth = 2.5;      // world units (gaussian width near left boundary)
+        this.waveX0 = 1.0;         // world x position of wavemaker center
 
 
         this.frameNumber = 0; //used for motion randomness
@@ -182,7 +196,7 @@ var Simulator = (function () {
     //gridSize and gridResolution are both [x, y, z]
 
     //particleDensity is particles per simulation grid cell
-    Simulator.prototype.reset = function (particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity, obstacle) {
+    Simulator.prototype.reset = function (particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity, obstacles) {
 
         this.particlesWidth = particlesWidth;
         this.particlesHeight = particlesHeight;
@@ -197,7 +211,25 @@ var Simulator = (function () {
 
         this.particleDensity = particleDensity;
 
-        this.obstacle = obstacle || null; // Store obstacle AABB
+        // Store obstacles (cap for shader uniform array)
+        var MAX_OBSTACLES = 8;
+        this.obstacles = obstacles || [];
+        this.obstacleCount = Math.min(this.obstacles.length, MAX_OBSTACLES);
+        this.obstacleMinData = new Float32Array(MAX_OBSTACLES * 3);
+        this.obstacleMaxData = new Float32Array(MAX_OBSTACLES * 3);
+        for (var i = 0; i < MAX_OBSTACLES; ++i) {
+            var omin = [0, 0, 0], omax = [0, 0, 0];
+            if (i < this.obstacleCount) {
+                omin = this.obstacles[i].min;
+                omax = this.obstacles[i].max;
+            }
+            this.obstacleMinData[i * 3 + 0] = omin[0];
+            this.obstacleMinData[i * 3 + 1] = omin[1];
+            this.obstacleMinData[i * 3 + 2] = omin[2];
+            this.obstacleMaxData[i * 3 + 0] = omax[0];
+            this.obstacleMaxData[i * 3 + 1] = omax[1];
+            this.obstacleMaxData[i * 3 + 2] = omax[2];
+        }
 
         this.velocityTextureWidth = (this.gridResolutionX + 1) * (this.gridResolutionZ + 1);
         this.velocityTextureHeight = (this.gridResolutionY + 1);
@@ -279,6 +311,15 @@ var Simulator = (function () {
         if (timeStep === 0.0) return;
 
         this.frameNumber += 1;
+
+        // advance wave timer (if active)
+        if (this.waveActive) {
+            this.waveTime += timeStep;
+            if (this.waveTime > this.waveDuration) {
+                this.waveActive = false;
+                this.waveTime = 0.0;
+            }
+        }
 
         var wgl = this.wgl;
 
@@ -430,6 +471,13 @@ var Simulator = (function () {
 
             .uniform3f('u_mouseRayOrigin', mouseRayOrigin[0], mouseRayOrigin[1], mouseRayOrigin[2])
             .uniform3f('u_mouseRayDirection', mouseRayDirection[0], mouseRayDirection[1], mouseRayDirection[2])
+            .uniform1i('u_waveActive', this.waveActive ? 1 : 0)
+            .uniform1f('u_waveTime', this.waveTime)
+            .uniform1f('u_waveDuration', this.waveDuration)
+            .uniform1f('u_waveFrequency', this.waveFrequency)
+            .uniform1f('u_waveStrength', this.waveStrength)
+            .uniform1f('u_waveWidth', this.waveWidth)
+            .uniform1f('u_waveX0', this.waveX0)
 
 
         wgl.drawArrays(addForceDrawState, wgl.TRIANGLE_STRIP, 0, 4);
@@ -453,14 +501,11 @@ var Simulator = (function () {
             .uniform3f('u_gridResolution', this.gridResolutionX, this.gridResolutionY, this.gridResolutionZ)
             .uniform3f('u_gridSize', this.gridWidth, this.gridHeight, this.gridDepth);
 
-        // Add obstacle uniforms if obstacle exists
-        if (this.obstacle !== null) {
-            enforceBoundariesDrawState.uniform3f('u_obstacleMin', this.obstacle.min[0], this.obstacle.min[1], this.obstacle.min[2])
-                .uniform3f('u_obstacleMax', this.obstacle.max[0], this.obstacle.max[1], this.obstacle.max[2])
-                .uniform1i('u_hasObstacle', 1);
-        } else {
-            enforceBoundariesDrawState.uniform1i('u_hasObstacle', 0);
-        }
+        // Obstacle uniforms
+        enforceBoundariesDrawState
+            .uniform1i('u_obstacleCount', this.obstacleCount)
+            .uniform3fv('u_obstacleMin[0]', this.obstacleMinData)
+            .uniform3fv('u_obstacleMax[0]', this.obstacleMaxData);
 
         wgl.drawArrays(enforceBoundariesDrawState, wgl.TRIANGLE_STRIP, 0, 4);
 
@@ -480,6 +525,7 @@ var Simulator = (function () {
 
             .useProgram(this.divergenceProgram)
             .uniform3f('u_gridResolution', this.gridResolutionX, this.gridResolutionY, this.gridResolutionZ)
+            .uniform3f('u_gridSize', this.gridWidth, this.gridHeight, this.gridDepth)
             .uniformTexture('u_velocityTexture', 0, wgl.TEXTURE_2D, this.velocityTexture)
             .uniformTexture('u_markerTexture', 1, wgl.TEXTURE_2D, this.markerTexture)
             .uniformTexture('u_weightTexture', 2, wgl.TEXTURE_2D, this.weightTexture)
@@ -487,6 +533,11 @@ var Simulator = (function () {
             .uniform1f('u_maxDensity', this.particleDensity)
 
             .vertexAttribPointer(this.quadVertexBuffer, 0, 2, wgl.FLOAT, false, 0, 0)
+
+        divergenceDrawState
+            .uniform1i('u_obstacleCount', this.obstacleCount)
+            .uniform3fv('u_obstacleMin[0]', this.obstacleMinData)
+            .uniform3fv('u_obstacleMax[0]', this.obstacleMaxData);
 
         wgl.framebufferTexture2D(this.simulationFramebuffer, wgl.FRAMEBUFFER, wgl.COLOR_ATTACHMENT0, wgl.TEXTURE_2D, this.divergenceTexture, 0);
         wgl.clear(
@@ -504,10 +555,16 @@ var Simulator = (function () {
 
             .useProgram(this.jacobiProgram)
             .uniform3f('u_gridResolution', this.gridResolutionX, this.gridResolutionY, this.gridResolutionZ)
+            .uniform3f('u_gridSize', this.gridWidth, this.gridHeight, this.gridDepth)
             .uniformTexture('u_divergenceTexture', 1, wgl.TEXTURE_2D, this.divergenceTexture)
             .uniformTexture('u_markerTexture', 2, wgl.TEXTURE_2D, this.markerTexture)
 
             .vertexAttribPointer(this.quadVertexBuffer, 0, 2, wgl.FLOAT, false, 0, 0)
+
+        jacobiDrawState
+            .uniform1i('u_obstacleCount', this.obstacleCount)
+            .uniform3fv('u_obstacleMin[0]', this.obstacleMinData)
+            .uniform3fv('u_obstacleMax[0]', this.obstacleMaxData);
 
 
         wgl.framebufferTexture2D(this.simulationFramebuffer, wgl.FRAMEBUFFER, wgl.COLOR_ATTACHMENT0, wgl.TEXTURE_2D, this.pressureTexture, 0);
@@ -544,6 +601,32 @@ var Simulator = (function () {
         
         wgl.drawArrays(subtractDrawState, wgl.TRIANGLE_STRIP, 0, 4);
         
+        swap(this, 'velocityTexture', 'tempVelocityTexture');
+
+        /////////////////////////////////////////////////////
+        // Re-enforce boundaries after projection.
+        // Projection can reintroduce small boundary-normal velocities; clamping again reduces corner "jets".
+
+        wgl.framebufferTexture2D(this.simulationFramebuffer, wgl.FRAMEBUFFER, wgl.COLOR_ATTACHMENT0, wgl.TEXTURE_2D, this.tempVelocityTexture, 0);
+
+        var enforceBoundariesPostProjectDrawState = wgl.createDrawState()
+            .bindFramebuffer(this.simulationFramebuffer)
+            .viewport(0, 0, this.velocityTextureWidth, this.velocityTextureHeight)
+
+            .vertexAttribPointer(this.quadVertexBuffer, 0, 2, wgl.FLOAT, wgl.FALSE, 0, 0)
+
+            .useProgram(this.enforceBoundariesProgram)
+            .uniformTexture('u_velocityTexture', 0, wgl.TEXTURE_2D, this.velocityTexture)
+            .uniform3f('u_gridResolution', this.gridResolutionX, this.gridResolutionY, this.gridResolutionZ)
+            .uniform3f('u_gridSize', this.gridWidth, this.gridHeight, this.gridDepth);
+
+        enforceBoundariesPostProjectDrawState
+            .uniform1i('u_obstacleCount', this.obstacleCount)
+            .uniform3fv('u_obstacleMin[0]', this.obstacleMinData)
+            .uniform3fv('u_obstacleMax[0]', this.obstacleMaxData);
+
+        wgl.drawArrays(enforceBoundariesPostProjectDrawState, wgl.TRIANGLE_STRIP, 0, 4);
+
         swap(this, 'velocityTexture', 'tempVelocityTexture');
 
         /////////////////////////////////////////////////////////////
@@ -596,18 +679,21 @@ var Simulator = (function () {
             .uniform1f('u_frameNumber', this.frameNumber)
             .uniform2f('u_particlesResolution', this.particlesWidth, this.particlesHeight);
 
-        // Add obstacle uniforms if obstacle exists
-        if (this.obstacle !== null) {
-            advectDrawState.uniform3f('u_obstacleMin', this.obstacle.min[0], this.obstacle.min[1], this.obstacle.min[2])
-                .uniform3f('u_obstacleMax', this.obstacle.max[0], this.obstacle.max[1], this.obstacle.max[2])
-                .uniform1i('u_hasObstacle', 1);
-        } else {
-            advectDrawState.uniform1i('u_hasObstacle', 0);
-        }
+        // Obstacle uniforms
+        advectDrawState
+            .uniform1i('u_obstacleCount', this.obstacleCount)
+            .uniform3fv('u_obstacleMin[0]', this.obstacleMinData)
+            .uniform3fv('u_obstacleMax[0]', this.obstacleMaxData);
 
         wgl.drawArrays(advectDrawState, wgl.TRIANGLE_STRIP, 0, 4);
 
         swap(this, 'particlePositionTextureTemp', 'particlePositionTexture');
+    }
+
+    // Trigger a wave entering from -X/+X direction (wavemaker at the left side).
+    Simulator.prototype.triggerWave = function () {
+        this.waveActive = true;
+        this.waveTime = 0.0;
     }
 
     return Simulator;

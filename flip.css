@@ -75,6 +75,34 @@ body {
     background: rgba(60, 140, 210, 1.0);
 }
 
+#wave-button {
+    margin-bottom: 10px;
+
+    background: rgba(80, 160, 230, 1.0);
+
+    font-size: 12px;
+    font-weight: bold;
+    color: white;
+
+    width: 100px;
+    height: 30px;
+    line-height: 30px;
+
+    text-align: center;
+
+    cursor: default;
+
+    pointer-events: auto;
+}
+
+#wave-button:hover {
+    background: rgba(70, 150, 220, 1.0);
+}
+
+#wave-button:active {
+    background: rgba(60, 140, 210, 1.0);
+}
+
 #ui {
     position: absolute;
 
@@ -90,6 +118,11 @@ body {
     font-size: 12px;
 
     margin-top: 4px;
+}
+
+#reef-controls {
+    margin-top: 10px;
+    max-width: 260px;
 }
 
 .slider-label {

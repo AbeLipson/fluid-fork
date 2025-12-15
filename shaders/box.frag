@@ -4,6 +4,8 @@ varying vec3 v_cubePosition;
 
 uniform vec3 u_highlightSide;
 uniform vec3 u_highlightColor;
+uniform vec3 u_baseColor;
+uniform float u_opacity;
 
 void main () {
     float epsilon = 0.001;
@@ -12,6 +14,6 @@ void main () {
     if (abs(normalizedCubePosition.x - u_highlightSide.x) < epsilon || abs(normalizedCubePosition.y - u_highlightSide.y) < epsilon || abs(normalizedCubePosition.z - u_highlightSide.z) < epsilon ) {
         gl_FragColor = vec4(u_highlightColor, 1.0);
     } else {
-        gl_FragColor = vec4(vec3(0.97), 1.0);
+        gl_FragColor = vec4(u_baseColor, u_opacity);
     }
 }

@@ -8,7 +8,8 @@ var FluidParticles = (function () {
         SIMULATING: 1
     };
 
-    var GRID_WIDTH = 40,
+    // Wider domain so the wave has more room to develop before (and after) interacting with the reef.
+    var GRID_WIDTH = 80,
         GRID_HEIGHT = 20,
         GRID_DEPTH = 20;
 
@@ -82,7 +83,8 @@ var FluidParticles = (function () {
                 // ],
                 //banzai pipeline
                 [
-                    new BoxEditor.AABB([0, 0, 0], [40, 8, 20]),
+                    // Fill the whole domain with a shallow "ocean" layer.
+                    new BoxEditor.AABB([0, 0, 0], [GRID_WIDTH, 8, GRID_DEPTH]),
                     //new BoxEditor.AABB([12, 12, 5], [28, 20, 15]) 
                 ]
 
@@ -99,11 +101,41 @@ var FluidParticles = (function () {
                     this.boxEditor.boxes.push(preset[i].clone());
                 }
 
+                // Mark the water fill volume as translucent in editing mode.
+                if (this.boxEditor.boxes.length > 0) {
+                    this.boxEditor.boxes[0].isWater = true;
+                }
+
                 this.currentPresetIndex = (this.currentPresetIndex + 1) % PRESETS.length; 
 
                 this.redrawUI();
 
             }).bind(this));
+
+            // Send wave (only available during simulation)
+            this.waveButton = document.getElementById('wave-button');
+            this.waveButton.addEventListener('click', (function () {
+                if (this.state === State.SIMULATING) {
+                    this.simulatorRenderer.simulator.triggerWave();
+                }
+            }).bind(this));
+
+            ////////////////////////////////////////////////////////
+            // reef controls (editing UI)
+
+            this.reefControls = document.getElementById('reef-controls');
+            this.reefObstacles = [
+                new BoxEditor.AABB([12, 0, 0], [16, 2.1, 19]),
+                new BoxEditor.AABB([16, 0, 0], [21, 3, 19]),
+                new BoxEditor.AABB([21, 0, 0], [37, 3.9, 19]),
+                new BoxEditor.AABB([27, 0, 0], [35, 4.8, 19]),
+                new BoxEditor.AABB([35, 0, 0], [37, 5.7, 19]),
+                new BoxEditor.AABB([37, 0, 0], [39, 6.6, 19]),
+                new BoxEditor.AABB([39, 0, 0], [50, 7.5, 19]),
+            ];
+
+            this.boxEditor.overlayBoxes = this.reefObstacles;
+            this.rebuildReefSliders();
 
 
 
@@ -111,7 +143,9 @@ var FluidParticles = (function () {
             // parameters/sliders
 
             //using gridCellDensity ensures a linear relationship to particle count
-            this.gridCellDensity = 0.5; //simulation grid cell density per world space unit volume
+            // Default density tuned so the initial preset lands around ~100,000 particles.
+            // (Actual particle count is rounded to the nearest texture size in `startSimulation()`.)
+            this.gridCellDensity = 1.05; //simulation grid cell density per world space unit volume
 
             this.timeStep = 1.0 / 60.0;
 
@@ -355,11 +389,11 @@ var FluidParticles = (function () {
         var gridSize = [GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH];
         var gridResolution = [gridResolutionX, gridResolutionY, gridResolutionZ];
 
-        // Create solid obstacle (same size as specified box)
-        var obstacle = new BoxEditor.AABB([12, 0, 5], [28, 8, 15]);
+        var obstacles = this.reefObstacles || [];
 
         var sphereRadius = 7.0 / gridResolutionX;
-        this.simulatorRenderer.reset(particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, PARTICLES_PER_CELL, sphereRadius, obstacle);
+        // Pass obstacles as a single array (SimulatorRenderer.reset supports this).
+        this.simulatorRenderer.reset(particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, PARTICLES_PER_CELL, sphereRadius, obstacles);
 
         this.camera.setBounds(0, Math.PI / 2);
     }
@@ -377,6 +411,37 @@ var FluidParticles = (function () {
             this.boxEditor.draw();
         } else if (this.state === State.SIMULATING) {
             this.simulatorRenderer.update(this.timeStep);
+        }
+    }
+
+    FluidParticles.prototype.rebuildReefSliders = function () {
+        if (!this.reefControls) return;
+
+        this.reefControls.innerHTML = '';
+        this.reefSliders = [];
+
+        for (var i = 0; i < this.reefObstacles.length; ++i) {
+            var obstacle = this.reefObstacles[i];
+
+            var label = document.createElement('div');
+            label.className = 'slider-label';
+            label.textContent = 'Reef ' + (i + 1) + ' height: ' + obstacle.max[1].toFixed(2);
+
+            var sliderDiv = document.createElement('div');
+            sliderDiv.className = 'slider';
+
+            this.reefControls.appendChild(label);
+            this.reefControls.appendChild(sliderDiv);
+
+            var slider = new Slider(sliderDiv, obstacle.max[1], 0.0, GRID_HEIGHT, (function (index, labelEl) {
+                return function (value) {
+                    var o = this.reefObstacles[index];
+                    o.max[1] = Math.max(value, o.min[1] + 0.01);
+                    labelEl.textContent = 'Step ' + (index + 1) + ' height: ' + o.max[1].toFixed(2);
+                }.bind(this);
+            }).call(this, i, label));
+
+            this.reefSliders.push(slider);
         }
     }
 

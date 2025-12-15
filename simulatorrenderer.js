@@ -62,8 +62,22 @@ var SimulatorRenderer = (function () {
         this.camera.onMouseUp(event);
     };
 
-    SimulatorRenderer.prototype.reset = function (particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity, sphereRadius, obstacle) {
-        this.simulator.reset(particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity, obstacle);
+    SimulatorRenderer.prototype.reset = function (particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity, sphereRadius) {
+        // Accept 0..N obstacle AABBs after sphereRadius.
+        var obstacles = [];
+        for (var i = 7; i < arguments.length; ++i) {
+            var arg = arguments[i];
+            if (!arg) continue;
+            if (Array.isArray(arg)) {
+                for (var j = 0; j < arg.length; ++j) {
+                    if (arg[j]) obstacles.push(arg[j]);
+                }
+            } else {
+                obstacles.push(arg);
+            }
+        }
+
+        this.simulator.reset(particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity, obstacles);
         this.renderer.reset(particlesWidth, particlesHeight, sphereRadius);
     }
 
@@ -98,10 +112,10 @@ var SimulatorRenderer = (function () {
         var cameraRight = [cameraViewMatrix[0], cameraViewMatrix[4], cameraViewMatrix[8]];
         var cameraUp = [cameraViewMatrix[1], cameraViewMatrix[5], cameraViewMatrix[9]];
 
-        var mouseVelocity = [];
-        for (var i = 0; i < 3; ++i) {
-            mouseVelocity[i] = mouseVelocityX * cameraRight[i] + mouseVelocityY * cameraUp[i];
-        }
+        // Disable mouse -> fluid interaction (but keep camera interaction).
+        // The "push particles around with the mouse" effect comes from passing a non-zero mouseVelocity
+        // into the simulation, which `shaders/addforce.frag` uses to inject momentum.
+        var mouseVelocity = [0.0, 0.0, 0.0];
 
         this.simulator.simulate(timeStep, mouseVelocity, this.camera.getPosition(), worldSpaceMouseRay);
         this.renderer.draw(this.simulator, this.projectionMatrix, this.camera.getViewMatrix());
