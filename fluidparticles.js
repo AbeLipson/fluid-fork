@@ -38,6 +38,10 @@ var FluidParticles = (function () {
             this.redrawUI(); 
         }).bind(this));
 
+        // Prevent users from creating/resizing/translating boxes in the initial (editing) screen.
+        // This keeps the initial water volume fixed so they can't spawn more particles by drawing boxes.
+        this.boxEditor.disableBoxEditing = true;
+
         this.simulatorRenderer = new SimulatorRenderer(this.canvas, this.wgl, this.projectionMatrix, this.camera, [GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH], (function () {
             simulatorRendererLoaded = true;
             if (boxEditorLoaded && simulatorRendererLoaded) {

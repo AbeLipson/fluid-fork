@@ -175,6 +175,10 @@ var BoxEditor = (function () {
 
         this.onChange = onChange;
 
+        // When true, disables all box interactions (create/resize/translate).
+        // Useful when you want a fixed initial setup (e.g., ocean snapshot) and only allow camera navigation.
+        this.disableBoxEditing = false;
+
         //the cube geometry is a 1x1 cube with the origin at the bottom left corner
 
         this.cubeVertexBuffer = wgl.createBuffer();
@@ -719,6 +723,11 @@ var BoxEditor = (function () {
 
         this.onMouseMove(event);
 
+        // If editing is disabled, only allow camera interaction mode (space + drag).
+        if (this.disableBoxEditing && !this.keyPressed[32]) {
+            return;
+        }
+
         if (!this.keyPressed[32]) { //if space isn't held down
 
             //we've finished extruding a box
@@ -993,7 +1002,7 @@ var BoxEditor = (function () {
 
                 highlightColor = [0.75, 0.75, 0.75];
             }
-        } else if (!this.keyPressed[32] && !this.camera.isMouseDown()) { //if we're not interacting with anything and we're not in camera mode
+        } else if (!this.disableBoxEditing && !this.keyPressed[32] && !this.camera.isMouseDown()) { //if we're not interacting with anything and we're not in camera mode
             var mouseRay = this.getMouseRay();
 
             var boxIntersection = this.getBoxIntersection(mouseRay.origin, mouseRay.direction);
