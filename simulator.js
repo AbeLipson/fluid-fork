@@ -43,6 +43,8 @@ var Simulator = (function () {
 
         this.particleDensity = 0;
 
+        this.obstacle = null; // AABB obstacle, null if no obstacle
+
         this.velocityTextureWidth = 0;
         this.velocityTextureHeight = 0;
 
@@ -180,7 +182,7 @@ var Simulator = (function () {
     //gridSize and gridResolution are both [x, y, z]
 
     //particleDensity is particles per simulation grid cell
-    Simulator.prototype.reset = function (particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity) {
+    Simulator.prototype.reset = function (particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, particleDensity, obstacle) {
 
         this.particlesWidth = particlesWidth;
         this.particlesHeight = particlesHeight;
@@ -194,6 +196,8 @@ var Simulator = (function () {
         this.gridResolutionZ = gridResolution[2];
 
         this.particleDensity = particleDensity;
+
+        this.obstacle = obstacle || null; // Store obstacle AABB
 
         this.velocityTextureWidth = (this.gridResolutionX + 1) * (this.gridResolutionZ + 1);
         this.velocityTextureHeight = (this.gridResolutionY + 1);
@@ -446,7 +450,17 @@ var Simulator = (function () {
 
             .useProgram(this.enforceBoundariesProgram)
             .uniformTexture('u_velocityTexture', 0, wgl.TEXTURE_2D, this.velocityTexture)
-            .uniform3f('u_gridResolution', this.gridResolutionX, this.gridResolutionY, this.gridResolutionZ);
+            .uniform3f('u_gridResolution', this.gridResolutionX, this.gridResolutionY, this.gridResolutionZ)
+            .uniform3f('u_gridSize', this.gridWidth, this.gridHeight, this.gridDepth);
+
+        // Add obstacle uniforms if obstacle exists
+        if (this.obstacle !== null) {
+            enforceBoundariesDrawState.uniform3f('u_obstacleMin', this.obstacle.min[0], this.obstacle.min[1], this.obstacle.min[2])
+                .uniform3f('u_obstacleMax', this.obstacle.max[0], this.obstacle.max[1], this.obstacle.max[2])
+                .uniform1i('u_hasObstacle', 1);
+        } else {
+            enforceBoundariesDrawState.uniform1i('u_hasObstacle', 0);
+        }
 
         wgl.drawArrays(enforceBoundariesDrawState, wgl.TRIANGLE_STRIP, 0, 4);
 
@@ -581,6 +595,15 @@ var Simulator = (function () {
             .uniform1f('u_timeStep', timeStep)
             .uniform1f('u_frameNumber', this.frameNumber)
             .uniform2f('u_particlesResolution', this.particlesWidth, this.particlesHeight);
+
+        // Add obstacle uniforms if obstacle exists
+        if (this.obstacle !== null) {
+            advectDrawState.uniform3f('u_obstacleMin', this.obstacle.min[0], this.obstacle.min[1], this.obstacle.min[2])
+                .uniform3f('u_obstacleMax', this.obstacle.max[0], this.obstacle.max[1], this.obstacle.max[2])
+                .uniform1i('u_hasObstacle', 1);
+        } else {
+            advectDrawState.uniform1i('u_hasObstacle', 0);
+        }
 
         wgl.drawArrays(advectDrawState, wgl.TRIANGLE_STRIP, 0, 4);
 

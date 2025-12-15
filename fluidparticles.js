@@ -64,22 +64,27 @@ var FluidParticles = (function () {
             this.currentPresetIndex = 0;
             this.editedSinceLastPreset = false; //whether the user has edited the last set preset
             var PRESETS = [
-                //dam break
-                [
-                    new BoxEditor.AABB([0, 0, 0], [15, 20, 20]) 
-                ],
+                // //dam break
+                // [
+                //     new BoxEditor.AABB([0, 0, 0], [15, 20, 20]) 
+                // ],
 
-                //block drop
-                [
-                    new BoxEditor.AABB([0, 0, 0], [40, 7, 20]),
-                    new BoxEditor.AABB([12, 12, 5], [28, 20, 15]) 
-                ],
+                // //block drop
+                // [
+                //     new BoxEditor.AABB([0, 0, 0], [40, 7, 20]),
+                //     new BoxEditor.AABB([12, 12, 5], [28, 20, 15]) 
+                // ],
 
-                //double splash
+                // //double splash
+                // [
+                //     new BoxEditor.AABB([0, 0, 0], [10, 20, 15]),
+                //     new BoxEditor.AABB([30, 0, 5], [40, 20, 20]) 
+                // ],
+                //banzai pipeline
                 [
-                    new BoxEditor.AABB([0, 0, 0], [10, 20, 15]),
-                    new BoxEditor.AABB([30, 0, 5], [40, 20, 20]) 
-                ],
+                    new BoxEditor.AABB([0, 0, 0], [40, 8, 20]),
+                    //new BoxEditor.AABB([12, 12, 5], [28, 20, 15]) 
+                ]
 
             ];
             
@@ -350,8 +355,11 @@ var FluidParticles = (function () {
         var gridSize = [GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH];
         var gridResolution = [gridResolutionX, gridResolutionY, gridResolutionZ];
 
+        // Create solid obstacle (same size as specified box)
+        var obstacle = new BoxEditor.AABB([12, 0, 5], [28, 8, 15]);
+
         var sphereRadius = 7.0 / gridResolutionX;
-        this.simulatorRenderer.reset(particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, PARTICLES_PER_CELL, sphereRadius);
+        this.simulatorRenderer.reset(particlesWidth, particlesHeight, particlePositions, gridSize, gridResolution, PARTICLES_PER_CELL, sphereRadius, obstacle);
 
         this.camera.setBounds(0, Math.PI / 2);
     }
